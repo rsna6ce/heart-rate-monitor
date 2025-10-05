@@ -13,6 +13,7 @@ int beatAvg; // 平均心拍数
 
 // ブザー設定
 #define BUZZER_PIN 15 // ブザーを接続するピン
+#define DRAIN_PIN 4   // ブザーのGND
 #define BUZZER_FREQ 988.884 // 3オクターブ上のミの音 (329.628 * 3.0 Hz)
 #define BUZZER_DURATION 50 // 鳴動時間 50ms
 #define LEDC_RESOLUTION 8 // 8ビット分解能
@@ -27,7 +28,6 @@ bool buzzerActive = false; // ブザーが鳴っているかどうか
 
 void setup() {
   Serial.begin(115200);
-  Serial.println("Initializing...");
 
   // MAX30102の初期化
   if (!particleSensor.begin(Wire, I2C_SPEED_FAST)) {
@@ -35,23 +35,19 @@ void setup() {
     while (1);
   }
 
-  // センサー設定（高サンプルレートで精度向上）
-  //particleSensor.setup(0, 4, 2, 400, 411, 4096); // サンプルレート400Hz、ADC範囲4096
-  //particleSensor.setPulseAmplitudeRed(70); // LED強度（低め）
-  //particleSensor.setPulseAmplitudeGreen(0); // 緑LEDオフ
   //Setup to sense a nice looking saw tooth on the plotter
   byte ledBrightness = 0x7F; //Options: 0=Off to 255=50mA
   byte sampleAverage = 4; //Options: 1, 2, 4, 8, 16, 32
   byte ledMode       = 2; //Options: 1 = Red only, 2 = Red + IR, 3 = Red + IR + Green
-  //Options: 1 = IR only, 2 = Red + IR on MH-ET LIVE MAX30102 board
   int sampleRate     = 200; //Options: 50, 100, 200, 400, 800, 1000, 1600, 3200
   int pulseWidth     = 411; //Options: 69, 118, 215, 411
   int adcRange       = 16384; //Options: 2048, 4096, 8192, 16384
-  
   // Set up the wanted parameters
   particleSensor.setup(ledBrightness, sampleAverage, ledMode, sampleRate, pulseWidth, adcRange);
   
   // ブザーのLEDC設定（Core 3系）
+  pinMode(DRAIN_PIN, OUTPUT_OPEN_DRAIN);
+  digitalWrite(DRAIN_PIN, LOW);
   ledcAttach(BUZZER_PIN, BUZZER_FREQ, LEDC_RESOLUTION);
 
   // オンボードLEDの設定
@@ -68,7 +64,10 @@ void loop() {
   }
 
   long irValue = particleSensor.getIR(); // IR値を取得
-
+  
+  /* for serial plotter debug
+  Serial.println(irValue);
+  //*/
   // 指が離れている場合を検出（IR値が低すぎる）
   if (irValue < 50000) {
     Serial.println("No finger detected.");
@@ -82,12 +81,6 @@ void loop() {
     lastBeat = millis();
 
     beatsPerMinute = 60 / (delta / 1000.0); // BPMを計算
-
-    // デバッグ: 心拍間隔とBPMを出力
-    Serial.print("Beat detected, delta: ");
-    Serial.print(delta);
-    Serial.print("ms, BPM: ");
-    Serial.println(beatsPerMinute);
 
     if (beatsPerMinute < 255 && beatsPerMinute > 20) {
       rates[rateSpot++] = (byte)beatsPerMinute; // 心拍数を保存
@@ -108,18 +101,25 @@ void loop() {
         buzzerActive = true;
       }
     }
+  } else {
+      long delta = millis() - lastBeat;
+      if (delta > 2000) {
+          beatAvg = 0;
+          ledcWrite(BUZZER_PIN, LEDC_DUTY);
+      }
   }
 
   // 1秒ごとに心拍数を出力
+  ///*
   static unsigned long lastPrint = 0;
   if (millis() - lastPrint >= 1000) {
     if (beatAvg > 0) {
-      Serial.print("Heart Rate: ");
-      Serial.print(beatAvg);
-      Serial.println(" BPM");
+      Serial.print("bpm ");
+      Serial.println(beatAvg);
     } else {
       Serial.println("No valid heart rate detected.");
     }
     lastPrint = millis();
   }
+  // */
 }
