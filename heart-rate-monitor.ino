@@ -1,6 +1,7 @@
 #include <Wire.h>
-#include "MAX30105.h" // SparkFun MAX3010xライブラリ
-#include "heartRate.h" // 心拍数計算用
+#include <U8g2lib.h>
+#include "MAX30105.h"
+#include "heartRate.h"
 
 MAX30105 particleSensor;
 
@@ -11,7 +12,7 @@ struct SensorData {
 } sensorData;
 
 struct HeartbeatConfig {
-  static const byte RATE_SIZE = 8;      // 心拍数の平均を取るサンプル数
+  static const byte RATE_SIZE = 4;      // 心拍数の平均を取るサンプル数
   static const uint32_t TRIGGER_NEGA = 4; // 単調減少判定閾値
   static const uint32_t CBUF_SIZE = 8;   // 移動平均バッファサイズ
 } config;
@@ -28,24 +29,25 @@ struct HeartbeatState {
   uint32_t countNega = 0;                // 単調減少カウンタ
 } state;
 
-// ハードウェア設定
 struct HardwareConfig {
   static const uint8_t BUZZER_PIN = 15;    // ブザーピン
   static const uint8_t DRAIN_PIN = 4;      // ブザーGND
-  static constexpr  float BUZZER_FREQ = 988.884; // 3オクターブ上のミ (329.628 * 3.0 Hz)
+  static constexpr float BUZZER_FREQ = 988.884; // 3オクターブ上のミ (329.628 * 3.0 Hz)
   static const uint32_t BUZZER_DURATION = 50; // 鳴動時間 (ms)
   static const uint8_t LEDC_RESOLUTION = 8; // PWM分解能
   static const uint8_t LEDC_DUTY = 128;     // デューティ比 50%
   static const uint8_t LED_PIN = 2;         // オンボードLEDピン
 } hwConfig;
 
-// ブザー/LED状態
 struct BuzzerState {
   unsigned long buzzerStartTime = 0; // ブザー鳴動開始時刻
   bool buzzerActive = false;         // ブザーが鳴っているか
 } buzzerState;
 
-// 移動平均を計算する関数
+U8G2_SSD1306_128X32_UNIVISION_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE); // Wireを使用
+#define SCREEN_LINE(n) ((16 * (n)) + 15)
+#define SCREEN_LINE32(n) ((32 * (n)) + 31)
+
 int32_t calculateMovingAverage() {
   int32_t total = 0;
   for (int i = 0; i < config.CBUF_SIZE; i++) {
@@ -54,7 +56,6 @@ int32_t calculateMovingAverage() {
   return total / config.CBUF_SIZE;
 }
 
-// 心拍検出関数
 bool checkForBeat2(int32_t sample) {
   state.cbuf[state.cbufIndex] = sample;
   state.cbufIndex = (state.cbufIndex + 1) % config.CBUF_SIZE;
@@ -72,20 +73,30 @@ bool checkForBeat2(int32_t sample) {
   return (config.TRIGGER_NEGA == state.countNega);
 }
 
+void screen_write_line(int line, const char* msg) {
+  u8g2.clearBuffer();
+  String smsg = String(msg) + "               ";
+  u8g2.setFont(u8g2_font_inb30_mr);
+  u8g2.drawStr(0, SCREEN_LINE32(line), smsg.substring(0, 16).c_str());
+  u8g2.sendBuffer();
+}
+
 // MAX30102ポーリングタスク
 void max30102Task(void *pvParameters) {
+  static int lastBeatAvg = -1; // 前回のbeatAvgを追跡
   while (1) {
-    // IR値の取得
     sensorData.irValue = particleSensor.getIR();
 
-    // 指が離れている場合
     if (sensorData.irValue < 50000) {
       sensorData.beatAvg = 0;
+      if (lastBeatAvg != sensorData.beatAvg) {
+        screen_write_line(0, "???");
+        lastBeatAvg = sensorData.beatAvg;
+      }
       vTaskDelay(10 / portTICK_PERIOD_MS);
       continue;
     }
 
-    // 心拍検出
     if (checkForBeat2(sensorData.irValue)) {
       long delta = millis() - state.lastBeat;
       state.lastBeat = millis();
@@ -100,9 +111,14 @@ void max30102Task(void *pvParameters) {
           tempAvg += state.rates[x];
         }
         sensorData.beatAvg = tempAvg / config.RATE_SIZE;
+
+        // beatAvgが更新された場合にのみ表示
+        if (lastBeatAvg != sensorData.beatAvg) {
+          screen_write_line(0, String(sensorData.beatAvg).c_str());
+          lastBeatAvg = sensorData.beatAvg;
+        }
       }
 
-      // ブザーとLEDを動作
       ledcWrite(hwConfig.BUZZER_PIN, hwConfig.LEDC_DUTY);
       digitalWrite(hwConfig.LED_PIN, HIGH);
       buzzerState.buzzerStartTime = millis();
@@ -111,26 +127,27 @@ void max30102Task(void *pvParameters) {
       long delta = millis() - state.lastBeat;
       if (delta > 2000) {
         sensorData.beatAvg = 0;
+        if (lastBeatAvg != sensorData.beatAvg) {
+          screen_write_line(0, "???");
+          lastBeatAvg = sensorData.beatAvg;
+        }
       }
     }
 
-    vTaskDelay(10 / portTICK_PERIOD_MS); // 100Hzサンプリング
+    vTaskDelay(10 / portTICK_PERIOD_MS);
   }
 }
 
 void setup() {
   Serial.begin(115200);
 
-  // MAX30102の初期化
   if (!particleSensor.begin(Wire, I2C_SPEED_FAST)) {
     Serial.println("MAX30102 not found. Please check wiring.");
     while (1);
   }
 
-  // MAX30102センサーの設定
   particleSensor.setup(0xFF, 4, 2, 200, 411, 16384);
 
-  // ハードウェア初期化
   pinMode(hwConfig.DRAIN_PIN, OUTPUT_OPEN_DRAIN);
   digitalWrite(hwConfig.DRAIN_PIN, LOW);
   ledcAttach(hwConfig.BUZZER_PIN, hwConfig.BUZZER_FREQ, hwConfig.LEDC_RESOLUTION);
@@ -138,31 +155,24 @@ void setup() {
   pinMode(hwConfig.LED_PIN, OUTPUT);
   digitalWrite(hwConfig.LED_PIN, LOW);
 
-  // MAX30102ポーリングタスクを作成（コア1）
-  xTaskCreatePinnedToCore(
-    max30102Task, "MAX30102 Task", 4096, NULL, 1, NULL, 1
-  );
+  Wire.begin(); // MAX30102とSSD1306用
+  if (!u8g2.begin()) {
+    Serial.println("SSD1306 initialization failed!");
+    while (1);
+  }
+  u8g2.setFlipMode(0);
+  u8g2.setContrast(128);
+  screen_write_line(0, "Init...");
+
+  xTaskCreatePinnedToCore(max30102Task, "MAX30102 Task", 4096, NULL, 1, NULL, 1);
 }
 
 void loop() {
-  // ブザー鳴動時間のチェック
   if (buzzerState.buzzerActive && (millis() - buzzerState.buzzerStartTime >= hwConfig.BUZZER_DURATION)) {
     ledcWrite(hwConfig.BUZZER_PIN, 0);
     digitalWrite(hwConfig.LED_PIN, LOW);
     buzzerState.buzzerActive = false;
   }
 
-  // 1秒ごとに心拍数を出力
-  static unsigned long lastPrint = 0;
-  if (millis() - lastPrint >= 1000) {
-    if (sensorData.beatAvg > 0) {
-      Serial.print("bpm ");
-      Serial.println(sensorData.beatAvg);
-    } else if (sensorData.irValue < 50000) {
-      Serial.println("No finger detected.");
-    } else {
-      Serial.println("No valid heart rate detected.");
-    }
-    lastPrint = millis();
-  }
+  // 定期的な更新を削除し、タスク内でのみ制御
 }
