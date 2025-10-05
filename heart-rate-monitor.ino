@@ -33,7 +33,7 @@ struct HardwareConfig {
   static const uint8_t BUZZER_PIN = 15;    // ブザーピン
   static const uint8_t DRAIN_PIN = 4;      // ブザーGND
   static constexpr float BUZZER_FREQ = 988.884; // 3オクターブ上のミ (329.628 * 3.0 Hz)
-  static const uint32_t BUZZER_DURATION = 50; // 鳴動時間 (ms)
+  static const uint32_t BUZZER_DURATION = 100; // 鳴動時間 (ms)
   static const uint8_t LEDC_RESOLUTION = 8; // PWM分解能
   static const uint8_t LEDC_DUTY = 128;     // デューティ比 50%
   static const uint8_t LED_PIN = 2;         // オンボードLEDピン
@@ -45,8 +45,30 @@ struct BuzzerState {
 } buzzerState;
 
 U8G2_SSD1306_128X32_UNIVISION_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE); // Wireを使用
-#define SCREEN_LINE(n) ((16 * (n)) + 15)
 #define SCREEN_LINE32(n) ((32 * (n)) + 31)
+
+// 32x32ハートビットマップ (generated image2cpp)
+const unsigned char epd_bitmap_heart[] PROGMEM = {
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0xe0, 0x00, 0xc0, 0x3f, 0xfc, 0x03, 0xe0, 0x7f, 0xfe, 0x07,
+  0xf0, 0xff, 0xff, 0x0f, 0xf8, 0xff, 0xff, 0x1f, 0xf8, 0xff, 0xff, 0x1f, 0xf8, 0xff, 0xff, 0x3f,
+  0xfc, 0xff, 0xff, 0x3f, 0xfc, 0xff, 0xff, 0x3f, 0xfc, 0xff, 0xff, 0x3f, 0xfc, 0xff, 0xff, 0x3f,
+  0xfc, 0xff, 0xff, 0x3f, 0xfc, 0xff, 0xff, 0x3f, 0xf8, 0xff, 0xff, 0x1f, 0xf8, 0xff, 0xff, 0x1f,
+  0xf8, 0xff, 0xff, 0x1f, 0xf8, 0xff, 0xff, 0x1f, 0xf0, 0xff, 0xff, 0x0f, 0xf0, 0xff, 0xff, 0x0f,
+  0xe0, 0xff, 0xff, 0x07, 0xe0, 0xff, 0xff, 0x07, 0xc0, 0xff, 0xff, 0x03, 0x80, 0xff, 0xff, 0x01,
+  0x00, 0xff, 0xff, 0x01, 0x00, 0xff, 0xff, 0x00, 0x00, 0xfe, 0x7f, 0x00, 0x00, 0xfc, 0x3f, 0x00,
+  0x00, 0xf0, 0x1f, 0x00, 0x00, 0xe0, 0x07, 0x00, 0x00, 0xc0, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+
+const unsigned char epd_bitmap_heart2 [] PROGMEM = {
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x1f, 0xf8, 0x00, 0xc0, 0x3f, 0xfc, 0x03, 0xc0, 0xff, 0xff, 0x03, 
+	0xc0, 0xff, 0xff, 0x07, 0xe0, 0xff, 0xff, 0x07, 0xe0, 0xff, 0xff, 0x07, 0xe0, 0xff, 0xff, 0x07, 
+	0xe0, 0xff, 0xff, 0x07, 0xc0, 0xff, 0xff, 0x03, 0xc0, 0xff, 0xff, 0x03, 0xc0, 0xff, 0xff, 0x03, 
+	0x80, 0xff, 0xff, 0x03, 0x80, 0xff, 0xff, 0x01, 0x80, 0xff, 0xff, 0x01, 0x00, 0xff, 0xff, 0x00, 
+	0x00, 0xff, 0xff, 0x00, 0x00, 0xfe, 0x7f, 0x00, 0x00, 0xfc, 0x7f, 0x00, 0x00, 0xf8, 0x3f, 0x00, 
+	0x00, 0xf0, 0x1f, 0x00, 0x00, 0xe0, 0x0f, 0x00, 0x00, 0xc0, 0x03, 0x00, 0x00, 0x80, 0x01, 0x00, 
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
 
 int32_t calculateMovingAverage() {
   int32_t total = 0;
@@ -73,11 +95,12 @@ bool checkForBeat2(int32_t sample) {
   return (config.TRIGGER_NEGA == state.countNega);
 }
 
-void screen_write_line(int line, const char* msg) {
+void screen_write_line(const char* msg, const unsigned char* bitmap) {
   u8g2.clearBuffer();
-  String smsg = String(msg) + "               ";
-  u8g2.setFont(u8g2_font_inb30_mr);
-  u8g2.drawStr(0, SCREEN_LINE32(line), smsg.substring(0, 16).c_str());
+  String smsg = String(msg) + "     "; // 5文字に収まるよう調整
+  u8g2.setFont(u8g2_font_inb30_mr); // 指定されたフォント
+  u8g2.drawStr(0, SCREEN_LINE32(0), smsg.substring(0, 5).c_str()); // 5文字に制限
+  u8g2.drawXBM(90, 0, 32, 32, bitmap); // 右端に32x32ビットマップを描画
   u8g2.sendBuffer();
 }
 
@@ -90,7 +113,7 @@ void max30102Task(void *pvParameters) {
     if (sensorData.irValue < 50000) {
       sensorData.beatAvg = 0;
       if (lastBeatAvg != sensorData.beatAvg) {
-        screen_write_line(0, "???");
+        screen_write_line("???", epd_bitmap_heart2); // ハートをクリア
         lastBeatAvg = sensorData.beatAvg;
       }
       vTaskDelay(10 / portTICK_PERIOD_MS);
@@ -112,23 +135,25 @@ void max30102Task(void *pvParameters) {
         }
         sensorData.beatAvg = tempAvg / config.RATE_SIZE;
 
-        // beatAvgが更新された場合にのみ表示
+        // beatAvgが更新された場合に表示
         if (lastBeatAvg != sensorData.beatAvg) {
-          screen_write_line(0, String(sensorData.beatAvg).c_str());
+          String displayText = String(sensorData.beatAvg);
           lastBeatAvg = sensorData.beatAvg;
         }
       }
 
+      // ブザー/LEDとハートを同期
       ledcWrite(hwConfig.BUZZER_PIN, hwConfig.LEDC_DUTY);
       digitalWrite(hwConfig.LED_PIN, HIGH);
       buzzerState.buzzerStartTime = millis();
       buzzerState.buzzerActive = true;
+      screen_write_line(String(lastBeatAvg).c_str(), epd_bitmap_heart); // ハートを表示
     } else {
       long delta = millis() - state.lastBeat;
       if (delta > 2000) {
         sensorData.beatAvg = 0;
         if (lastBeatAvg != sensorData.beatAvg) {
-          screen_write_line(0, "???");
+          screen_write_line("???", epd_bitmap_heart2); // ハートをクリア
           lastBeatAvg = sensorData.beatAvg;
         }
       }
@@ -162,7 +187,7 @@ void setup() {
   }
   u8g2.setFlipMode(0);
   u8g2.setContrast(128);
-  screen_write_line(0, "Init...");
+  screen_write_line("Init", epd_bitmap_heart2);
 
   xTaskCreatePinnedToCore(max30102Task, "MAX30102 Task", 4096, NULL, 1, NULL, 1);
 }
@@ -172,7 +197,6 @@ void loop() {
     ledcWrite(hwConfig.BUZZER_PIN, 0);
     digitalWrite(hwConfig.LED_PIN, LOW);
     buzzerState.buzzerActive = false;
+    screen_write_line(String(sensorData.beatAvg).c_str(), epd_bitmap_heart2); // ハートをクリア
   }
-
-  // 定期的な更新を削除し、タスク内でのみ制御
 }
