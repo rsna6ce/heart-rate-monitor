@@ -99,8 +99,8 @@ void screen_write_line(const char* msg, const unsigned char* bitmap) {
   u8g2.clearBuffer();
   String smsg = String(msg) + "     "; // 5文字に収まるよう調整
   u8g2.setFont(u8g2_font_inb30_mr); // 指定されたフォント
-  u8g2.drawStr(0, SCREEN_LINE32(0), smsg.substring(0, 5).c_str()); // 5文字に制限
-  u8g2.drawXBM(90, 0, 32, 32, bitmap); // 右端に32x32ビットマップを描画
+  u8g2.drawStr(16, SCREEN_LINE32(0), smsg.substring(0, 5).c_str()); // 5文字に制限
+  u8g2.drawXBM(96, 0, 32, 32, bitmap); // 右端に32x32ビットマップを描画
   u8g2.sendBuffer();
 }
 
