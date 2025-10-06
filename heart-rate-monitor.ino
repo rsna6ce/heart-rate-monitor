@@ -185,7 +185,7 @@ void setup() {
     Serial.println("SSD1306 initialization failed!");
     while (1);
   }
-  u8g2.setFlipMode(0);
+  u8g2.setFlipMode(1);
   u8g2.setContrast(128);
   screen_write_line("Init", epd_bitmap_heart2);
 
