@@ -147,7 +147,11 @@ void max30102Task(void *pvParameters) {
       digitalWrite(hwConfig.LED_PIN, HIGH);
       buzzerState.buzzerStartTime = millis();
       buzzerState.buzzerActive = true;
-      screen_write_line(String(lastBeatAvg).c_str(), epd_bitmap_heart); // ハートを表示
+      String displayText = String(lastBeatAvg);
+      for (int i = displayText.length(); i < 3; i++) {
+        displayText = " " + displayText; // 左にスペースを追加
+      }
+      screen_write_line(displayText.c_str(), epd_bitmap_heart); // ハートを表示
     } else {
       long delta = millis() - state.lastBeat;
       if (delta > 2000) {
@@ -197,6 +201,10 @@ void loop() {
     ledcWrite(hwConfig.BUZZER_PIN, 0);
     digitalWrite(hwConfig.LED_PIN, LOW);
     buzzerState.buzzerActive = false;
-    screen_write_line(String(sensorData.beatAvg).c_str(), epd_bitmap_heart2); // ハートをクリア
+    String displayText = String(sensorData.beatAvg);
+    for (int i = displayText.length(); i < 3; i++) {
+      displayText = " " + displayText; // 左にスペースを追加
+    }
+    screen_write_line(displayText.c_str(), epd_bitmap_heart2); // ハートをクリア
   }
 }
